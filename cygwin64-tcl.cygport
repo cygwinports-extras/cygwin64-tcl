@@ -1,0 +1,70 @@
+CROSS_HOST="x86_64-pc-cygwin"
+inherit cross
+
+NAME="cygwin64-tcl"
+VERSION=8.5.11
+RELEASE=1
+CATEGORY="Devel"
+SUMMARY="TCL for Cygwin 64bit toolchain"
+DESCRIPTION="Tcl provides a powerful platform for creating integration
+applications that tie together diverse applications, protocols, devices,
+and frameworks. When paired with the Tk toolkit, Tcl provides the fastest
+and most powerful way to create GUI applications that run on PCs, Unix, and
+the Macintosh. Tcl can also be used for a variety of web-related tasks and
+for creating powerful command languages for applications."
+HOMEPAGE="http://tcl.tk/"
+SRC_URI="mirror://sourceforge/tcl/tcl${VERSION}-src.tar.gz
+         http://tcl.cvs.sourceforge.net/viewvc/tcl/tclconfig/tcl.m4"
+SRC_DIR="tcl${VERSION}"
+PATCH_URI="8.5-cygwin.patch
+	   8.5-cross-install.patch
+	   8.5.10-tea-m4.patch"
+
+DIFF_EXCLUDES='aclocal.m4 configure'
+
+src_compile() {
+	cd ${S}/unix
+	cygautoreconf
+
+	mkdir -p ${B}/unix
+	cd ${B}/unix
+	cygconf --enable-man-symlinks tcl_cv_strtod_buggy=no tcl_cv_sys_version=CYGWIN_NT
+	cygmake -j1
+	cygmake libtcl${VERSION%.*}.a STUB_LIB_FILE=libtcl${VERSION%.*}.a STUB_LIB_OBJS=\${OBJS}
+}
+
+src_install() {
+	cd ${B}/unix
+	cyginstall
+
+	mv ${D}${CROSS_LIBDIR}/libtcl${VERSION%.*}.dll ${D}${CROSS_BINDIR}/
+	dolib libtcl${VERSION%.*}.dll.a
+
+	sed -i \
+		-e "s|^\(TCL_BUILD_LIB_SPEC\)='.*|\1='-Wl,${CROSS_LIBDIR}/libtcl${VERSION%.*}.dll.a'|" \
+		-e "s|^\(TCL_SRC_DIR\)='.*'|\1='${CROSS_INCLUDEDIR}/tcl${VERSION%.*}'|" \
+		-e "s|^\(TCL_BUILD_STUB_LIB_SPEC\)='.*|\1='-Wl,${CROSS_LIBDIR}/libtclstub${VERSION%.*}.a'|" \
+		-e "s|^\(TCL_BUILD_STUB_LIB_PATH\)='.*/unix|\1='${CROSS_LIBDIR}|" \
+		-e "s|^\(TCL_STUB_LIB_SPEC\)='.*|\1='-Wl,-ltclstub${VERSION%.*}'|" \
+		${D}${CROSS_LIBDIR}/tclConfig.sh || error
+
+	# install private headers
+	includeinto tcl${VERSION%.*}/unix
+	doinclude ${S}/unix/*.h
+	includeinto tcl${VERSION%.*}/generic
+	doinclude ${S}/generic/*.h
+
+	# install build system macros
+	insinto ${CROSS_DATADIR}/aclocal
+	newins ${S}/unix/tcl.m4 tcl-sc.m4
+	newins ${S}/tcl.m4 tcl-tea.m4
+
+	# remove needless binaries and data
+	rm -f ${D}${CROSS_BINDIR}/tclsh*
+	rm -fr ${D}${CROSS_LIBDIR}/tcl*/
+	rm -fr ${D}${CROSS_DATADIR}/man/
+
+	# make the default tcl version
+	dosym libtcl${VERSION%.*}.dll.a ${CROSS_LIBDIR}/libtcl.dll.a
+	dosym libtclstub${VERSION%.*}.a ${CROSS_LIBDIR}/libtclstub.a
+}
